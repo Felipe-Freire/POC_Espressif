@@ -12,4 +12,10 @@ struct comms_data_motion {
     uint32_t id;
 };
 
+struct comms_data_electronic {
+    float battery;
+    float voltage;
+    float temperature;
+};
+
 #endif /* COMMS_DATA_H_ */

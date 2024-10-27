@@ -1,14 +1,38 @@
-# put here your custom config value
-menu "Example Configuration"
-config ESP_WIFI_SSID
-    string "WiFi SSID"
-    default "myssid"
-    help
-	SSID (network name) for the example to connect to.
+menu "Application Configuration"
 
-config ESP_WIFI_PASSWORD
-    string "WiFi Password"
-    default "mypassword"
-    help
-	WiFi password (WPA or WPA2) for the example to use.
-endmenu
+    choice TYPE_ESP32
+        prompt "ESP Functionality"
+        default ROBOT
+        help
+            Select the functionality that the esp will perform.
+        config ESP32_PC
+            bool "As the ESP32_PC"
+            help
+                As the ESP32_PC.
+        config ROBOT
+            bool "As the ROBOT"
+            help
+            	As the ROBOT.
+    endchoice
+
+	choice ROBOT_ADDR
+		prompt "ROBOT address"
+		depends on ROBOT
+		default ROBOT1
+		help
+			Select the ROBOT address.
+		config ROBOT1
+			bool "Use 1 as ROBOT address"
+			help
+				Use 1 as ROBOT address
+		config ROBOT2
+			bool "Use 2 as ROBOT address"
+			help
+				Use 2 as ROBOT address
+		config ROBOT3
+			bool "Use 3 as ROBOT address"
+			help
+				Use 3 as ROBOT address
+	endchoice
+	
+endmenu 
