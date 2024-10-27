@@ -371,11 +371,14 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# Example Configuration
+# Application Configuration
 #
-CONFIG_ESP_WIFI_SSID="myssid"
-CONFIG_ESP_WIFI_PASSWORD="mypassword"
-# end of Example Configuration
+# CONFIG_ESP32_PC is not set
+CONFIG_ROBOT=y
+CONFIG_ROBOT1=y
+# CONFIG_ROBOT2 is not set
+# CONFIG_ROBOT3 is not set
+# end of Application Configuration
 
 #
 # nRF24L01 Configuration

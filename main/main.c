@@ -12,18 +12,23 @@
 #define ROBOT1 1
 #define ROBOT2 2
 #define ROBOT3 3
+#define CHANNEL CONFIG_RADIO_CHANNEL
+#define PAYLOAD 32
 
 #if CONFIG_ROBOT
-static const uint8_t robot_id;
-struct comms_data_motion received_data;
+static uint8_t robot_id;
 #endif // CONFIG_ROBOT
 
-void initRadio(NRF24_t *dev, uint8_t channel, uint8_t payload);
-void send_radio();
+NRF24_t dev;
+
+
+void initRadio();
+void send_radio(uint8_t *data);
 void task_receive(void *pvParameters);
 
 
 void app_main(void) {
+	initRadio();
 #if CONFIG_ROBOT
 	xTaskCreate(&task_receive, "TASK_RB_RECEIVE", 1024*3, NULL, 2, NULL);
 #endif // CONFIG_ROBOT
@@ -31,11 +36,30 @@ void app_main(void) {
 #if CONFIG_ESP32_PC
 	xTaskCreate(&task_receive, "TASK_PC_RECEIVE", 1024*3, NULL, 2, NULL);
 #endif // CONFIG_ESP32_PC
+
+	while (1) {
+        // Delay para o intervalo de envio
+        vTaskDelay(500 / portTICK_PERIOD_MS);  // 500 ms para periodicidade
+
+#if CONFIG_ROBOT
+        // Enviar dados simulados pelo robô
+        struct comms_data_motion simulated_data_robot = {
+            .id = robot_id,  // ID do robô atual
+            .front_left = 1.0f, .front_right = 1.1f,
+            .rear_left = 1.2f, .rear_right = 1.3f,
+            .kick = 0.5f
+        };
+        send_radio((uint8_t *)&simulated_data_robot);
+
+#elif CONFIG_ESP32_PC
+        // Enviar dados simulados pelo PC
+        struct comms_data_electronic simulated_data_pc = {
+            .voltage = 3.7f, .current = 1.0f, .temperature = 25.0f
+        };
+        send_radio(&dev, (uint8_t *)&simulated_data_pc);
+#endif // CONFIG_ROBOT / CONFIG_ESP32_PC
+    }
 }
-
-
-void send_radio(){}
-
 
 #if CONFIG_ADVANCED
 void advancedSettings(NRF24_t * dev) {
@@ -47,12 +71,12 @@ void advancedSettings(NRF24_t * dev) {
 }
 #endif // CONFIG_ADVANCED
 
-//TODO: check best structure to start the radio
-void initRadio(NRF24_t *dev, uint8_t channel, uint8_t payload) {
+
+void initRadio() {
     ESP_LOGI(pcTaskGetName(NULL), "Start");
 
-    Nrf24_init(dev);
-    Nrf24_config(dev, channel, payload);
+    Nrf24_init(&dev);
+    Nrf24_config(&dev, CHANNEL, PAYLOAD);
     
 #if CONFIG_ROBOT
 	// Set my own address using 5 characters
@@ -63,13 +87,13 @@ void initRadio(NRF24_t *dev, uint8_t channel, uint8_t payload) {
 	}
 
 #if CONFIG_ROBOT1
-	esp_err_t ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO1");
+	ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO1");
 	robot_id = ROBOT1;
 #elif CONFIG_ROBOT2
-	esp_err_t ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO2");
+	ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO2");
 	robot_id = ROBOT2;
 #elif CONFIG_ROBOT3
-	esp_err_t ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO3");
+	ret = Nrf24_setTADDR(&dev, (uint8_t *)"ROBO3");
 	robot_id = ROBOT3;
 #endif
 	if (ret != ESP_OK) {
@@ -85,7 +109,7 @@ void initRadio(NRF24_t *dev, uint8_t channel, uint8_t payload) {
 		while(1) { vTaskDelay(1); }
 	}
 
-	// Add my own address using 1 characters
+	// Add more address using 1 characters
 	Nrf24_addRADDR(&dev, ROBOT2, '2'); // ROBO2
 	Nrf24_addRADDR(&dev, ROBOT3, '3'); // ROBO3
 	
@@ -98,23 +122,41 @@ void initRadio(NRF24_t *dev, uint8_t channel, uint8_t payload) {
 #endif // CONFIG_ESP32_PC
 
 #if CONFIG_ADVANCED
-    advancedSettings(dev);
+    advancedSettings(&dev);
 #endif // CONFIG_ADVANCED
 
     // Print settings
-    Nrf24_printDetails(dev);
+    Nrf24_printDetails(&dev);
 }
 
-// TODO: receiving task for robot and pc
-void task_receive(void *pvParameters) {
-    NRF24_t dev;
-    uint8_t payload = 32;
-    uint8_t channel = CONFIG_RADIO_CHANNEL;
-    
-    initRadio(&dev, channel, payload);    
-    
-    ESP_LOGI(pcTaskGetName(NULL), "TASK RECEIVE...");
 
+void log_received_data(void *data) {
+#if CONFIG_ROBOT
+    struct comms_data_motion *motion_data = (struct comms_data_motion *)data;
+    ESP_LOGI(pcTaskGetName(NULL), "Received data: ID=%"PRIu32", FL=%.2f, FR=%.2f, RL=%.2f, RR=%.2f, Kick=%.2f",
+             motion_data->id,
+             motion_data->front_left, 
+             motion_data->front_right, 
+             motion_data->rear_left, 
+             motion_data->rear_right, 
+             motion_data->kick);
+#elif CONFIG_ESP32_PC
+    struct comms_data_electronic *electronic_data = (struct comms_data_electronic *)data;
+    ESP_LOGI(pcTaskGetName(NULL), "Received data: Voltage=%.2f, Current=%.2f, Temp=%.2f",
+             electronic_data->voltage,
+             electronic_data->current,
+             electronic_data->temperature);
+#endif
+}
+
+
+void task_receive(void *pvParameters) {
+#if CONFIG_ROBOT
+    struct comms_data_motion received_data;
+#else
+    struct comms_data_electronic received_data;
+#endif
+	
     // Clear RX FiFo
     while(1) {
         if (Nrf24_dataReady(&dev) == false) break;
@@ -127,44 +169,19 @@ void task_receive(void *pvParameters) {
             Nrf24_getData(&dev, (uint8_t*)&received_data);
 
             // Log - data receive
-            ESP_LOGI(pcTaskGetName(NULL), "Received data: ID=%d, FL=%.2f, FR=%.2f, RL=%.2f, RR=%.2f, Kick=%.2f",
-                     received_data.id, 
-                     received_data.front_left, 
-                     received_data.front_right, 
-                     received_data.rear_left, 
-                     received_data.rear_right, 
-                     received_data.kick);
+            log_received_data(&received_data); // Print data based on CONFIG
         }
         vTaskDelay(1 / portTICK_PERIOD_MS);  // Evitar WatchDog
     }
 }
 
-// TODO: modify the way data is sent (maybe receive DEV and DATA type or UINT*)
-void task_send(void *pvParameters) {
-    NRF24_t dev;
-    uint8_t channel = CONFIG_RADIO_CHANNEL;
-    uint8_t payload = 32;
-    initRadio(&dev, channel, payload);
-    
-    struct comms_data_motion data_to_send;
-    
-    // Preencher a estrutura com dados
-        data_to_send.front_left = 1.0;
-        data_to_send.front_right = 2.0;
-        data_to_send.rear_left = 3.0;
-        data_to_send.rear_right = 4.0;
-        data_to_send.kick = 0.0;
-        data_to_send.id = 12345;
-        
-    while(1) {
-        Nrf24_send(&dev, (uint8_t*)&data_to_send);
-        ESP_LOGI(pcTaskGetName(NULL), "Wait for sending.....");
-        if (Nrf24_isSend(&dev, 1000)) {
-            ESP_LOGI(pcTaskGetName(NULL),"Send success:%d [%s]", data_to_send.id);
-            index++;
-        } else {
-            ESP_LOGW(pcTaskGetName(NULL),"Send fail:");
-        }
-        vTaskDelay(1000/portTICK_PERIOD_MS);
+
+void send_radio(uint8_t *data) {
+	Nrf24_send(&dev, data);
+    ESP_LOGI(pcTaskGetName(NULL), "Wait for sending.....");
+    if (Nrf24_isSend(&dev, 1000)) {
+        ESP_LOGI(pcTaskGetName(NULL),"Send success:%d", *data);
+    } else {
+        ESP_LOGW(pcTaskGetName(NULL),"Send fail:");
     }
 }
